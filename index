@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>MIDI Тренажер для Піаніно</title>
+    <style>
+        :root {
+            --panel-bg: rgba(10, 10, 20, 0.78);
+            --field-bg: #ffffff;
+            --field-text: #1a1a1a;
+            --accent: #ff6b6b;
+            --ok: #00e676;
+            --warn: #ffeb3b;
+            --text: #ffffff;
+            --text-dim: #d9d9e0;
+        }
+
+        body {
+            background-image: url('Background.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0 0 40px;
+            font-family: 'Segoe UI', system-ui, Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 15px;
+            line-height: 1.4;
+            color: var(--text);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.35);
+            z-index: -1;
+        }
+
+        /* --- Зона падіння і клавіатура --- */
+        #fallingNotesContainer {
+            width: 100%;
+            max-width: 2080px;
+            box-sizing: border-box;
+            height: 600px;
+            position: relative;
+            margin: 16px auto 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.15);
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            scrollbar-width: none;
+        }
+        #fallingNotesContainer::-webkit-scrollbar,
+        #keyboard::-webkit-scrollbar { display: none; }
+
+        #keyboard {
+            max-width: 2080px;
+            width: 100%;
+            height: 150px;
+            position: relative;
+            margin: 0 auto;
+            overflow-x: auto;
+            overflow-y: hidden;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            scrollbar-width: none;
+        }
+
+        .key {
+            position: absolute;
+            top: 0;
+            border: 1px solid #555;
+            cursor: pointer;
+            user-select: none;
+            touch-action: none;
+            box-sizing: border-box;
+        }
+        .white-key { width: 40px; height: 150px; background: #fff; z-index: 1; }
+        .black-key { width: 26px; height: 90px; background: #111; z-index: 2; }
+        .white-key.active { background: #ccc; box-shadow: 0 0 6px rgba(255,255,255,0.8); }
+        .black-key.active { background: #555; }
+        .key.target { outline: 3px solid var(--warn); }
+        .key-label {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 6px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+            pointer-events: none;
+            text-shadow: none;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .black-key .key-label { color: #eee; font-size: 11px; }
+        .note-fall, .user-note {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: #fff;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+            white-space: nowrap;
+            overflow: hidden;
+            line-height: 1;
+        }
+
+        .note-fall {
+            position: absolute;
+            border-radius: 4px;
+            z-index: 10;
+            box-sizing: border-box;
+            box-shadow: 0 0 8px rgba(255,255,255,0.35);
+        }
+        .note-fall.expect { outline: 2px solid #fff; }
+        .note-fall.dim { opacity: 0.35; }
+        .note-fall.hit { background: var(--ok) !important; box-shadow: 0 0 22px var(--ok); }
+        .note-fall.miss { background: #ff4d4d !important; opacity: 0.55; }
+
+        .user-note {
+            position: absolute;
+            bottom: 0;
+            height: 20px;
+            border-radius: 4px;
+            z-index: 10;
+            opacity: 0.9;
+        }
+
+        /* --- Панель керування: компактна сітка --- */
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+            gap: 10px;
+            max-width: 1180px;
+            width: calc(100% - 24px);
+            margin: 16px auto 0;
+            padding: 12px;
+            box-sizing: border-box;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+        }
+        .span-all { grid-column: 1 / -1; }
+
+        .controls button, .controls input, .controls select {
+            font: inherit;
+            font-size: 15px;
+            padding: 8px 10px;
+            border: 1px solid rgba(0,0,0,0.25);
+            border-radius: 6px;
+            box-sizing: border-box;
+            background: var(--field-bg);
+            color: var(--field-text);
+        }
+        .controls input[type="file"] { width: 100%; background: rgba(255,255,255,0.92); }
+        .controls input[type="checkbox"], .controls input[type="radio"] {
+            width: 17px;
+            height: 17px;
+            margin: 0;
+            padding: 0;
+            accent-color: var(--accent);
+            flex: 0 0 auto;
+        }
+        .controls input[type="range"] {
+            flex: 1;
+            min-width: 0;
+            padding: 0;
+            border: none;
+            background: transparent;
+            accent-color: var(--accent);
+        }
+        .controls input[type="number"] { width: 92px; text-align: right; }
+        .controls select { width: 100%; }
+        .controls label input[type="number"],
+        .controls label select { flex: 0 1 60%; min-width: 0; }
+
+        .controls button { cursor: pointer; font-weight: 600; }
+        .controls button:hover:not(:disabled) { background: #e8e8e8; }
+        .controls button:focus-visible,
+        .controls input:focus-visible,
+        .controls select:focus-visible { outline: 3px solid var(--warn); outline-offset: 1px; }
+        .controls button:disabled { opacity: 0.45; cursor: default; }
+
+        .controls label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        fieldset {
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 8px;
+            padding: 8px 10px 10px;
+            margin: 0;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+        legend {
+            padding: 0 6px;
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: 0.2px;
+        }
+
+        .hint {
+            font-size: 14px;
+            color: var(--text-dim);
+            margin: 0;
+        }
+        #splitLabel { text-align: right; }
+        #audioHint { color: var(--accent); text-align: center; font-weight: 700; }
+
+        .mode-switch {
+            display: flex;
+            gap: 6px;
+        }
+        .mode-switch label {
+            flex: 1;
+            justify-content: center;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .mode-switch label:has(input:checked) {
+            background: rgba(255,107,107,0.35);
+            border-color: var(--accent);
+        }
+
+        .score-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 6px 18px;
+            font-size: 17px;
+            font-weight: 700;
+            background: rgba(0,0,0,0.5);
+            padding: 8px 12px;
+            border-radius: 6px;
+        }
+        .score-row span b { color: #fff; }
+        .feedback {
+            min-height: 26px;
+            text-align: center;
+            font-size: 19px;
+            font-weight: 700;
+        }
+        .feedback.perfect, .feedback.good { color: var(--ok); }
+        .feedback.ok { color: var(--warn); }
+        .feedback.bad { color: var(--accent); }
+
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 8px;
+            min-width: 0;
+        }
+        .meta-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .stats-display { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
+
+        .results-card {
+            background: rgba(0,0,0,0.6);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 15px;
+            line-height: 1.55;
+        }
+        .res-title { font-weight: 700; font-size: 16px; margin-bottom: 2px; }
+        .results-card:empty { display: none; }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .actions button { flex: 1 1 110px; }
+        #playBtn { flex: 1.4 1 140px; background: #d9ffe6; }
+        #stopBtn { background: #ffe0e0; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .note-fall, .user-note { transition: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <div class="span-all">
+            <button id="startButton">Start (розблокувати аудіо)</button>
+        </div>
+        <div class="span-all">
+            <input type="file" id="midiFileInput" accept=".mid,.midi,.kar,.abc,.xml,.musicxml,.mxl" aria-label="Завантажити ноти">
+            <div class="hint">MIDI (.mid, .midi, .kar) · ABC (.abc) · MusicXML (.xml, .musicxml, .mxl)</div>
+            <div id="audioHint" role="status">🔊 Спочатку натисніть Start</div>
+        </div>
+
+        <div class="span-all mode-switch" role="radiogroup" aria-label="Режим">
+            <label><input type="radio" name="mode" value="playback" checked> Відтворення</label>
+            <label><input type="radio" name="mode" value="practice"> Тренування</label>
+        </div>
+
+        <fieldset>
+            <legend>Що тренувати</legend>
+            <label>Доріжка:
+                <select id="trackSelect"><option value="all">Усі доріжки</option></select>
+            </label>
+            <label>Частина:
+                <select id="partSelect">
+                    <option value="all">Уся</option>
+                    <option value="high">Права рука (вище межі)</option>
+                    <option value="low">Ліва рука (нижче межі)</option>
+                </select>
+            </label>
+            <label>Межа (MIDI):
+                <span><input type="number" id="splitInput" value="60" min="21" max="108"> <span id="splitLabel" class="hint">C4</span></span>
+            </label>
+            <label><input type="checkbox" id="accompanimentCheck"> Грати не вибрані ноти</label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Темп і фрагмент</legend>
+            <label>Темп:
+                <select id="tempoModeSelect">
+                    <option value="file" selected>Як у файлі</option>
+                    <option value="custom">Власний BPM</option>
+                </select>
+            </label>
+            <label>Власний BPM: <input type="number" id="bpmInput" value="120" min="40" max="300"></label>
+            <label>Швидкість:
+                <span style="display:flex;align-items:center;gap:8px;flex:0 1 60%;min-width:0">
+                    <input type="range" id="speedSlider" min="0.5" max="2" step="0.1" value="1">
+                    <span id="speedDisplay" style="min-width:36px;text-align:right">1.0x</span>
+                </span>
+            </label>
+            <label>Фрагмент, з (сек): <input type="number" id="loopFrom" min="0" step="0.5" placeholder="0"></label>
+            <label>Фрагмент, до (сек): <input type="number" id="loopTo" min="0" step="0.5" placeholder="кінець"></label>
+            <label><input type="checkbox" id="loopCheck"> Повторювати фрагмент</label>
+            <div class="hint">Швидкість змінюється під час гри, BPM — при старті</div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Звук і вхід</legend>
+            <label>Інструмент:
+                <select id="instrumentSelect">
+                    <option value="synth">Синтезатор</option>
+                    <option value="piano">Піаніно</option>
+                    <option value="organ">Орган</option>
+                </select>
+            </label>
+            <label>Гучність: <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.8"></label>
+            <label>Назви нот:
+                <select id="noteLabelSelect">
+                    <option value="solfege" selected>до ре мі</option>
+                    <option value="letters">C D E</option>
+                    <option value="off">Без назв</option>
+                </select>
+            </label>
+            <label>Латентність (мс): <input type="number" id="latencyInput" value="50" min="0" max="300"></label>
+            <button id="calibrateBtn">Калібрувати латентність</button>
+            <div class="hint">A S D F G H J K — білі · W E T Y U — чорні · Z / X — октава</div>
+        </fieldset>
+
+        <div class="side-panel">
+            <div class="meta-row">
+                <span>Час: <span id="timeDisplay">00:00</span></span>
+                <span>Темп: <span id="tempoDisplay">—</span></span>
+            </div>
+            <div class="stats-display" id="statsDisplay" aria-live="polite"></div>
+        </div>
+
+        <div class="span-all score-row" aria-live="polite">
+            <span>Рахунок: <b id="scoreDisplay">0</b></span>
+            <span>Пропущено: <b id="missDisplay">0</b></span>
+            <span>Зайві: <b id="extraDisplay">0</b></span>
+        </div>
+        <div class="span-all feedback" id="feedbackDisplay" aria-live="polite"></div>
+        <div class="span-all" id="resultsPanel"></div>
+
+        <div class="span-all actions">
+            <button id="playBtn" disabled>Play</button>
+            <button id="pauseBtn" disabled>Пауза</button>
+            <button id="stopBtn" disabled>Стоп</button>
+            <button id="recBtn">Rec</button>
+            <button id="saveMidiBtn" disabled>Зберегти MIDI</button>
+            <button id="stopAllBtn">Звук стоп</button>
+        </div>
+    </div>
+
+    <div id="fallingNotesContainer"></div>
+    <div id="keyboard"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/abcjs@6.2.2/dist/abcjs-basic-min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="musicxml.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
