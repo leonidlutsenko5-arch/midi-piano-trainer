@@ -1,0 +1,19 @@
+# системні файли
+.DS_Store
+Thumbs.db
+
+# редактори
+.vscode/
+.idea/
+
+# архіви і збірки
+*.zip
+*.rar
+node_modules/
+
+# тимчасові файли
+*.log
+*.tmp
+
+# Visual Studio кеш
+.vs/
